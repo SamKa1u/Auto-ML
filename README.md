@@ -21,9 +21,6 @@
 git clone https://github.com/SamKa1u/Auto-ML.git
 ```
 
-#### Ensure your gamepad is connected to your windows device by doing the following:
-1.  
-
 
 
 ## Author
