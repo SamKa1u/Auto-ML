@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn import svm
 from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import make_pipeline
@@ -19,26 +21,53 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import accuracy_score, mean_squared_error, f1_score
+from sklearn.metrics import accuracy_score, mean_squared_error, f1_score, mean_absolute_error, mean_squared_log_error, mean_absolute_percentage_error, r2_score,median_absolute_error, classification_report, confusion_matrix
 import numpy as np
 
 def model_training(models, X_train, X_test, y_train, y_test,clas):
     preds = []
-    scores = []
-    accs = []
-    f1s =[]
+    R2s= []
+    MAEs= []
+    MSLEs= []
+    MAPEs = []
+    MAbEs = []
+    ClsReps = []
+    CnfMtxs = []
     for model_name, model in models.items():
         X_test_t = X_test.to(device)
-
         # train
         model.fit(X_train, y_train)
         # predict
         pred = model.predict(X_test_t)
         preds.append(pred)
         # evaluate
-        score = model.score(X_test_t, y_test)
-        scores.append(score)
-    return preds, scores, accs, f1s
+        if not clas:
+            r2 = r2_score(y_test, pred)
+            R2s.append(r2)
+
+            mae = mean_absolute_error(y_test, pred)
+            MAEs.append(mae)
+
+            # st.info(y_test)
+            # st.info(pred)
+            msle = None#mean_squared_log_error(y_test, pred)
+            MSLEs.append(msle)
+
+            mape = mean_absolute_percentage_error(y_test, pred)
+            MAPEs.append(mape)
+
+            mabe = median_absolute_error(y_test, pred)
+            MAbEs.append(mabe)
+        else:
+            cls_rep = classification_report(y_test, pred, output_dict=True)
+            # cls_rep_df = pd.DataFrame(cls_rep, index=, columns=).transpose()
+            # st.dataframe(cls_rep_df)
+            ClsReps.append(cls_rep)
+
+            con_mat = confusion_matrix(y_test, pred)
+            CnfMtxs.append(con_mat)
+
+    return preds, R2s, MAEs, MSLEs, MAPEs, MAbEs, ClsReps, CnfMtxs
 
 with st.sidebar:
     st.title('AutoML App')
@@ -69,10 +98,11 @@ if choice == "Profiling":
         st.info("Upload Data before preceding to Profiling")
 
 if choice == "ML":
-    st.title("Machine Learning with PyTorch")
+    st.title("Machine Learning with PyTorch :robot:")
     if not df_exists:
         st.info("Upload Data before preceding to ML")
     else:
+        st.title(":small[Experiment Settings]")
         # select target variable
         target = st.selectbox("Select Target Variable", df.columns)
 
@@ -90,8 +120,8 @@ if choice == "ML":
 
         # determine task type
         is_classification = False if y.dtypes != "object" else True
-        st.title(is_classification)
-        st.info(y.dtypes)
+        # st.title(is_classification)
+        # st.info(y.dtypes)
 
         # handle taret encoding if classification
         if is_classification:
@@ -137,40 +167,45 @@ if choice == "ML":
         results = []
 
         svc = make_pipeline(StandardScaler(), svm.SVC(gamma="auto",kernel="rbf"))
-        example_models = {  
+        reg_models = {
             "Linear Regression": LinearRegression(),
             "Support Vector Regression": svm.SVR(),
             "Decision Tree Regressor": DecisionTreeRegressor(max_depth=12),
+        }
+        clas_models = {
             "Logistic Regression": LogisticRegression(),
             "Support Vector Classifier": svc,
             "Naive Bayes": GaussianNB(),
         }
+        example_models = clas_models if is_classification else reg_models
 
-        preds, scores, accs, f1s = model_training(example_models, X_train, X_test, y_train, y_test,is_classification)
-
+        # train example models
+        preds, R2s, MAEs, MSLEs, MAbPEs, MAbEs, ClsReps, CnfMtxs = model_training(example_models, X_train, X_test, y_train, y_test, is_classification)
         i = 0
         for model_name, models in example_models.items():
-            # if not is_classification:
-            results.append({
-                "Model": model_name,
-                "Score": scores[i],
-            })
-            # else:
-            #     results.append({
-            #         "Model": model_name,
-            #         "Score": scores[i],
-            #         "Accuracy": accs[i],
-            #         "F1": f1s[i],
-            #
-            #     })
-            i +=1
+            if not is_classification:
+                results.append({
+                    "Model": model_name,
+                    "R2 Score": R2s[i],
+                    "Mean absolute error": MAEs[i],
+                    "Mean squared Log error": MSLEs[i],
+                    "Mean absolute percentage error": MAbPEs[i],
+                    "Median absolute error": MAbEs[i],
+                })
+            else:
+                results.append({
+                    "Model": model_name,
+                    "ClsReps": ClsReps[i],
+                    "CnfMtxs": CnfMtxs[i],
+                })
+            i += 1
 
-
+        # compare custom models
         custom_models = {
-            "Model A": CustomModelA(),
+            "Custom Model A": CustomModelA(),
         }
 
-        # setup info
+        # experiment setup info
         setup_info = {
             "Target Variable": target,
             "Task Type": "Classification" if is_classification else "Regression",
@@ -182,11 +217,9 @@ if choice == "ML":
             "Loss Funtion": criterion.__class__.__name__,
         }
 
-        st.info("The Experiment Settings")
         st.dataframe(pd.DataFrame([setup_info]))
 
-        # training and evaluatiom
-
+        # custom model training and evaluation
         for model_name, model in custom_models.items():
             model.to(device)
             optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -209,25 +242,63 @@ if choice == "ML":
                 y_pred = model(X_test_t)
                 if is_classification:
                     y_pred = torch.argmax(y_pred, dim=1).cpu().numpy()
-                    acc = accuracy_score(y_test, y_pred)
-                    f1 = f1_score(y_test, y_pred, average="weighted")
+                    ClsReps = classification_report(y_test, y_pred, output_dict=True)
+                    CnfMtxs = confusion_matrix(y_test, y_pred)
                     results.append({
                         "Model": model_name,
-                        "Accuracy": acc,
-                        "F1 Score": f1
+                        "ClsReps": ClsReps,
+                        "CnfMtxs": CnfMtxs,
                     })
                 else:
                     y_pred = y_pred.flatten().cpu().numpy()
-                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+                    r2 = r2_score(y_test, y_pred)
+                    mae = mean_absolute_error(y_test, y_pred)
+                    msle = mean_squared_log_error(y_test, y_pred)
+                    mape = mean_absolute_percentage_error(y_test, y_pred)
+                    mabe = median_absolute_error(y_test, y_pred)
+
                     results.append({
                         "Model": model_name,
-                        "RMSE": rmse
+                        "R2 Score": r2,
+                        "Mean absolute error": mae,
+                        "Mean squared Log error": msle,
+                        "Mean absolute percentage error": mape,
+                        "Median absolute error": mabe,
                     })
 
         # Display comparison
         results_df = pd.DataFrame(results)
-        st.info("This is the ML Model Comparison")
-        st.dataframe(results_df)
+
+
+        if is_classification:
+            # st.header("Model Comparison", divider="grey")
+            for result in results:
+                cols = ["precision","recall","f1-score","support"]
+                rows = [0,1, "accuracy"]
+                st.subheader(f"{result['Model']}", divider="grey" )
+                st.title(":small[Classification Report:]")
+                reports_df =  pd.DataFrame.from_dict(result["ClsReps"]).transpose()
+                st.dataframe(reports_df)
+
+                # confusion matrix
+                CnfMtxs = result["CnfMtxs"]
+                labels = ['Class 0', 'Class 1']
+                conf_matrix_df = pd.DataFrame(CnfMtxs, index=labels, columns=labels)
+                conf_matrix_df.index.name = 'Actual'
+                conf_matrix_df.columns.name = 'Predicted'
+
+                fig = plt.figure(figsize=(4, 3))
+
+                sns.heatmap(conf_matrix_df, annot=True, fmt='d', cmap='Blues')
+                plt.title('Confusion Matrix')
+                st.pyplot(fig)
+
+
+        else:
+            st.title(":small[Model Comparison]")
+            st.dataframe(results_df)
+
 
 
 
