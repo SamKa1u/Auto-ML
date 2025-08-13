@@ -1,6 +1,8 @@
 import pandas as pd
 import streamlit as st
 import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 #   Profiling
 from ydata_profiling import ProfileReport
@@ -10,7 +12,7 @@ from streamlit_ydata_profiling import st_profile_report
 import requests
 import io
 parquet_buffer = io.BytesIO()
-url = 'http://127.0.0.1:8000'
+url = 'http://127.0.0.1:8080'
 df_endpoint = "/receive_df"
 
 def process_df(df):
@@ -39,7 +41,8 @@ if choice == "Upload":
         df = pd.read_csv(file, index_col = None)
         df.to_csv("sourceData.csv", index = None)
         res = process_df(df)
-        if res["error"]:
+        res  = res.json()
+        if res["error"] != "0":
             st.error(res["error"])
         else:
             st.info(res["message"])
@@ -58,8 +61,10 @@ if choice == "ML":
         st.info("Upload Data before preceding to ML")
     else:
         st.title(":small[Experiment Settings]")
+
         # select target variable
         target = st.selectbox("Select Target Variable", df.columns)
+        X_df = df.drop(columns=[target])
 
         # select number of epochs
         epochs = st.slider("Number of Epochs", min_value=1, max_value=25, value=10, step=1)
@@ -67,21 +72,32 @@ if choice == "ML":
         # select features
         features = st.multiselect("Select columns NOT to be used for Feature Extraction", X_df.columns)
 
-        # select batch-size
-        batch_size = st.slider("Train loader batch-size (in percent)", min_value=1, max_value=64, value=32, step=1)
-
         # select test_split
         test_split = st.slider("Percent of data reserved for validation", min_value=10, max_value=90, value=20, step=1)
         test_split = test_split / 100
 
         # get response from backend
-        experiment_endpoint = f"/target/{target}/epochs/{epochs}/features/{features}/test_split/{test_split}/batch_size/{batch_size}"
+        experiment_endpoint = f"/target/{target}/epochs/{epochs}/features/{features}/test_split/{test_split}"
         res = requests.post(url+experiment_endpoint)
-        if res["error"]:
+        res = res.json()
+        st.info(res)
+
+        if res["error"]!= "0":
             st.error(res["error"])
         else:
-            results = res["result"]
+            results = res["results"]
             setup = res["setup"]
+
+            y_test = res["y_test"].values()
+            y_lis = []
+            for item in y_test:
+                y_lis.append(item["0"])
+
+            if "Regression" in setup:
+                is_classification = False
+            else:
+                is_classification = True
+
             results_df = pd.read_json(results)
             setup_df =  pd.read_json(setup)
 
@@ -90,14 +106,14 @@ if choice == "ML":
 
             if is_classification:
                 results = results_df
-                for result in results:
-                    st.subheader(f"{result['Model']}", divider="grey" )
+                for i, model_name in enumerate(results_df['Model']):
+                    st.subheader(f"{model_name}", divider="grey" ) # model name
                     st.title(":small[Classification Report:]")
-                    reports_df =  pd.DataFrame.from_dict(result["ClsReps"]).transpose()
+                    reports_df =  pd.DataFrame.from_dict(results_df["ClsReps"][i]).transpose()
                     st.dataframe(reports_df)
 
                     # confusion matrix
-                    CnfMtxs = result["CnfMtxs"]
+                    CnfMtxs = results_df["CnfMtxs"][i]
                     st.info(CnfMtxs)
                     index = []
                     columns = []
@@ -116,25 +132,23 @@ if choice == "ML":
                     plt.title('Confusion Matrix')
                     st.pyplot(fig)
 
-
             else:
-                results_df = results_df.drop(columns="Predictions")
+                results_df_drp_pred = results_df.drop(columns="Predictions")
                 st.title(":small[Model Comparison]")
-                col1, col2 = st.columns(2)
-                st.dataframe(results_df)
+                st.dataframe(results_df_drp_pred)
                 fig = plt.figure(figsize=(4, 3))
-                sns.lineplot(y_test)
+                sns.lineplot(y_lis)
                 plt.title('Y_test')
-                plt.xlim(0, len(y_test))
-                plt.ylim(0, max(y_test))
+                plt.xlim(0, len(y_lis))
+                plt.ylim(0, max(y_lis))
                 st.pyplot(fig)
 
-                for result in results:
+                for i, preds in enumerate(results_df["Predictions"]):
                     fig, ax = plt.subplots(figsize=(4, 3))
-                    sns.lineplot(result["Predictions"], ax=ax)
-                    plt.xlim(0,len(y_test))
-                    plt.ylim(0,max(y_test))
-                    ax.set_title(f'{result["Model"]}')
+                    sns.lineplot(preds, ax=ax)
+                    plt.xlim(0,len(y_lis))
+                    plt.ylim(0,max(y_lis))
+                    ax.set_title(f'{results_df["Model"][i]}')
                     ax.set_xlabel('Index')
                     ax.set_ylabel('Y_pred')
                     st.pyplot(fig)

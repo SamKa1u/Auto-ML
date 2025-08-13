@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 
 # preprocessing
-from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
@@ -29,7 +28,7 @@ def model_training(models, X_train, X_test, y_train, y_test,clas):
     ClsReps = []
     CnfMtxs = []
     for model_name, model in models.items():
-        X_test_t = X_test.to(device)
+        X_test_t = X_test
         # train
         model.fit(X_train, y_train)
         # predict
@@ -62,16 +61,19 @@ def model_training(models, X_train, X_test, y_train, y_test,clas):
             CnfMtxs.append(con_mat)
     return preds, R2s, MAEs, MSLEs, MAPEs, MAbEs, ClsReps, CnfMtxs
 
-def get_modeling(target, epochs, df, features, test_split, batch_size):
+def get_modeling(target, epochs, df, features, test_split):
     y = df[target]
+
     X_df = df.drop(columns=[target])
 
     # select features
-    X = X_df.drop(columns=features)
+    if features == '[]':
+        X = X_df
+    else:
+        X = X_df.drop(columns=features)
 
     # determine task type
     is_classification = False if y.dtypes != "object" else True
-
     # handle taret encoding if classification
     if is_classification:
         y = LabelEncoder().fit_transform(y)
@@ -84,16 +86,12 @@ def get_modeling(target, epochs, df, features, test_split, batch_size):
         metric_name = "MSE"
 
     # encode and scale features
-    X = pd.get_dummies(X, drop_first = True)
+    X = pd.get_dummies(X, drop_first=True)
     X = StandardScaler().fit_transform(X)
     X = torch.tensor(X, dtype=torch.float32)
 
     # split data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_split, random_state=42)
-
-    # dataloader
-    train_set = TensorDataset(X_train, y_train)
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 
     # define models to compare
     RanForReg = RandomForestRegressor(n_estimators=10, max_features=2, max_leaf_nodes=5, random_state=42)
@@ -110,17 +108,18 @@ def get_modeling(target, epochs, df, features, test_split, batch_size):
     example_models = clas_models if is_classification else reg_models
 
     # experiment setup info
+    val_split = test_split * 100
+    t_split = 100 - val_split
     setup_info = {
         "Target Variable": target,
         "Task Type": "Classification" if is_classification else "Regression",
         "Feature Processing": "StandardScaler + One-Hot Encoding",
-        "Validation Split": "80-20",
-        "Batch Size": 32,
+        "Validation Split": f"{int(t_split)}-{int(val_split)}",
     }
 
     # fit models
-    preds, R2s, MAEs, MSLEs, MAbPEs, MAbEs, ClsReps, CnfMtxs = model_training(example_models, X_train, X_test, y_train, y_test, is_classification)
-
+    preds, R2s, MAEs, MSLEs, MAbPEs, MAbEs, ClsReps, CnfMtxs = model_training(example_models, X_train, X_test,
+                                                                              y_train, y_test, is_classification)
     # gather statistics
     results = []
     i = 0
@@ -144,5 +143,6 @@ def get_modeling(target, epochs, df, features, test_split, batch_size):
         i += 1
 
     results = pd.DataFrame(results).to_json()
-    setup  = pd.DataFrame([setup_info]).to_json()
-    return results, setup
+    setup = pd.DataFrame([setup_info]).to_json()
+    y_test = pd.DataFrame([y_test.numpy().tolist()])
+    return results, setup, y_test

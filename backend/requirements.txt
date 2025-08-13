@@ -1,0 +1,7 @@
+numpy
+torch
+sklearn-compat
+uvicorn
+fastapi
+pandas
+python-multipart
