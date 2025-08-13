@@ -1,7 +1,7 @@
 numpy==1.26.4
-torch
-streamlit
-pandas
-ydata-profiling
-streamlit-ydata-profiling
-sklearn
+torch==2.7.1
+streamlit==1.46.1
+pandas==2.1.4
+ydata-profiling==4.16.1
+streamlit-ydata-profiling==0.2.1
+sklearn-compat==0.1.3
