@@ -33,5 +33,5 @@ Samuel Kalu
 
 
 ## Inspiration, code snippets, etc.
-#### Waveshare
+#### W
 * [](https://www.waveshare.com/wiki/General_Driver_for_Robots)
